@@ -10,7 +10,7 @@ The device itself consists of a small plastic shell in the shape of an envelope.
 
 On a more technical note, the USB vendor and product ID are as follows:
 
-**Vender:** `1d34`  
+**Vender:** `1D34`  
 **Product:** `0004`
 
 ### The Protocol
@@ -21,3 +21,10 @@ A sample block of data sent to the device to make it appear blue would look like
 
     00 00 40 00 00 00 1F 05
 
+I have no idea what the `1F 05` is for, but it seems to exist in every command dispatched, so I include it when sending commands to the device. Perhaps some more experimentation will reveal its purpose.
+
+### Building the Module
+
+Building the module is easy if you have the headers for your current kernel installed. Just run:
+
+    make

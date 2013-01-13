@@ -1,17 +1,11 @@
-# Object files
+# Anything starting with a '.'
+.*
+
+# Compiled files
 *.o
+*.ko
 
-# Libraries
-*.lib
-*.a
-
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
-*.out
-*.app
+# Kernel module files
+*.mod.c
+*.symvers
+*.order
