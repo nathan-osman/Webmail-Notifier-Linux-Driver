@@ -66,12 +66,19 @@ static ssize_t wn_write(struct file * file,
     return 0;
 }
 
-/* Create the table containing the list of file operation functions. */
+/* Table containing the list of file operation functions. */
 static struct file_operations wn_fops = {
     .owner =    THIS_MODULE,
     .open =     wn_open,
     .release =  wn_release,
     .write =    wn_write
+};
+
+/* ... */
+static struct usb_class_driver wn_class = {
+    .name       = "wn%d",
+    .fops       = &wn_fops
+    //.minor_base = 0,
 };
 
 /* Called when one of the decives is connected. */
@@ -80,12 +87,13 @@ static int wn_probe(struct usb_interface * interface,
 {
     struct usb_device * udev = interface_to_usbdev(interface);
     struct usb_wn * dev = NULL;
+    int retval = -ENODEV;
     
     /* Ensure that the interface exists. */
     if(!udev)
     {
         WN_ERR("interface_to_usbdev returned NULL");
-        return -ENODEV;
+        goto error;
     }
     
     /* Allocate storage space for the usb_wn struct and store
@@ -94,12 +102,22 @@ static int wn_probe(struct usb_interface * interface,
     if(!dev)
     {
         WN_ERR("unable to allocate memory for usb_wn struct");
-        return -ENOMEM;
+        retval = -ENOMEM;
+        goto error;
     }
     
     /* Associate the usb_wn with the interface. */
     usb_set_intfdata(interface, dev);
-    return 0;
+    
+    /* Now attempt to actually create the device. */
+    retval = usb_register_dev(interface, &wn_class);
+    return retval;
+
+error:
+    
+    /* Free the memory used by the structure if an error occurred. */
+    kfree(dev);
+    return retval;
 }
 
 /* Called when one of the devices is disconnected. */
@@ -109,6 +127,9 @@ static void wn_disconnect(struct usb_interface * interface)
     struct usb_wn * dev = usb_get_intfdata(interface);
     usb_set_intfdata(interface, NULL);
     kfree(dev);
+    
+    /* Deregister the device we created. */
+    usb_deregister_dev(interface, &wn_class);
 }
 
 static struct usb_driver wn_driver = {
