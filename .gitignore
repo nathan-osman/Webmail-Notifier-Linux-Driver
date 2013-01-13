@@ -1,5 +1,6 @@
-# Anything starting with a '.'
+# Anything starting with a '.' or ending with '~'
 .*
+*~
 
 # Compiled files
 *.o

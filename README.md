@@ -1,6 +1,6 @@
-## Webmail-Notifier-Linux-Driver
+## Webmail Notifier Linux Driver
 
-This project intends to create a working Linux device driver for the [Dream Cheeky USB Webmail Notifier](http://www.dreamcheeky.com/webmail-notifier).
+This project intends to create a working Linux device driver for the [Dream Cheeky USB Webmail Notifier](http://www.dreamcheeky.com/webmail-notifier). The picture below demonstrates its appearance when lit:
 
 ### The Device
 
