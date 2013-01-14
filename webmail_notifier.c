@@ -20,8 +20,8 @@
 #include <linux/slab.h>
 #include <linux/usb.h>
 
-/* Utility macro for logging error messages. */
-#define WN_ERR(e) printk(KERN_DEBUG e);
+/* Utility macro for logging information / error messages. */
+#define WN_DEBUG(msg, args...) printk(KERN_DEBUG msg "\n", ##args)
 
 /* The vendor and product ID of our device. */
 #define WN_VENDOR_ID  0x1D34
@@ -42,10 +42,47 @@ static struct usb_device_id wn_table[] = {
 };
 MODULE_DEVICE_TABLE(usb, wn_table);
 
+/* Forward declare the wn_driver instance. */
+static struct usb_driver wn_driver;
+
+/* Set the device to the specified color. */
+static int wn_set_color(struct usb_device * udev,
+                        u8 red, u8 green, u8 blue)
+{
+    /* Create the data buffer to be sent to the device. */
+    u8 buf[8] = {
+        red, green, blue, 0, 0, 0, 0x1F, 0x05
+    };
+    
+    /* Send the data to the device. */
+    return usb_control_msg(udev,
+                           usb_sndctrlpipe(udev, 0),
+                           0,
+                           0,
+                           0,
+                           0,
+                           buf,
+                           8,
+                           0);
+}
+
 /* Called when our device is opened. */
 static int wn_open(struct inode * inode,
                    struct file * file)
 {
+    int subminor = iminor(inode);
+    struct usb_interface * interface = usb_find_interface(&wn_driver, subminor);
+    
+    /* Ensure that the interface is valid. */
+    if(!interface)
+    {
+        WN_DEBUG("unable to find interface for device file");
+        return -ENODEV;
+    }
+    
+    /* Store a pointer to the usb_wn instance with the file. */
+    file->private_data = usb_get_intfdata(interface);
+    
     return 0;
 }
 
@@ -63,7 +100,16 @@ static ssize_t wn_write(struct file * file,
                         size_t count,
                         loff_t * ppos)
 {
-    return 0;
+    struct usb_wn * dev = file->private_data;
+
+    /* Verify that the device is still valid. */
+    if(!dev->udev)
+    {
+        WN_DEBUG("usb_device is NULL");
+        return -ENODEV;
+    }
+    
+    return wn_set_color(dev->udev, 0x40, 0, 0);
 }
 
 /* Table containing the list of file operation functions. */
@@ -78,7 +124,6 @@ static struct file_operations wn_fops = {
 static struct usb_class_driver wn_class = {
     .name       = "wn%d",
     .fops       = &wn_fops
-    //.minor_base = 0,
 };
 
 /* Called when one of the decives is connected. */
@@ -92,7 +137,7 @@ static int wn_probe(struct usb_interface * interface,
     /* Ensure that the interface exists. */
     if(!udev)
     {
-        WN_ERR("interface_to_usbdev returned NULL");
+        WN_DEBUG("interface_to_usbdev returned NULL");
         goto error;
     }
     
@@ -101,16 +146,19 @@ static int wn_probe(struct usb_interface * interface,
     dev = kzalloc(sizeof(struct usb_wn), GFP_KERNEL);
     if(!dev)
     {
-        WN_ERR("unable to allocate memory for usb_wn struct");
+        WN_DEBUG("unable to allocate memory for usb_wn struct");
         retval = -ENOMEM;
         goto error;
     }
     
     /* Associate the usb_wn with the interface. */
+    dev->udev = udev;
     usb_set_intfdata(interface, dev);
     
     /* Now attempt to actually create the device. */
     retval = usb_register_dev(interface, &wn_class);
+    
+    WN_DEBUG("device connected and initialized");
     return retval;
 
 error:
@@ -130,8 +178,11 @@ static void wn_disconnect(struct usb_interface * interface)
     
     /* Deregister the device we created. */
     usb_deregister_dev(interface, &wn_class);
+    
+    WN_DEBUG("device has been disconnected");
 }
 
+/* Driver information table. */
 static struct usb_driver wn_driver = {
     .name =       "webmail_notifier",
     .probe =      wn_probe,
@@ -142,11 +193,13 @@ static struct usb_driver wn_driver = {
 /* Called when our module is loaded into the kernel. */
 static int __init usb_wn_init(void)
 {
-    /* Register the USB driver, logging an error if the
-       there was a problem. Return the results. */
+    /* Attempt to register the USB driver. */
     int retval = usb_register(&wn_driver);
-    if(retval)
-        WN_ERR("failed to register the webmail_notifier driver");
+    
+    /* Either way, log the status. */
+    if(retval) WN_DEBUG("failed to register the webmail_notifier driver");
+    else       WN_DEBUG("webmail_nofitifier driver registered");
+    
     return retval;
 }
 
@@ -155,6 +208,8 @@ static void __exit usb_wn_exit(void)
 {
     /* Remove the USB driver. */
     usb_deregister(&wn_driver);
+    
+    WN_DEBUG("webmail_nofitifier driver registered");
 }
 
 module_init(usb_wn_init);
