@@ -20,20 +20,15 @@
 #include <linux/slab.h>
 #include <linux/usb.h>
 
-/* Utility macro for logging information / error messages. */
-#define WN_DEBUG(msg, args...) printk(KERN_DEBUG msg "\n", ##args)
+/* Utility macro for logging error messages. */
+#define WN_ERR(msg, args...) printk(KERN_DEBUG "[webmail_notifier] " msg "\n", ##args)
 
 /* The vendor and product ID of our device. */
-#define WN_VENDOR_ID  0x1D34
+#define WN_VENDOR_ID  0x1d34
 #define WN_PRODUCT_ID 0x0004
 
-/* We store some device-specific information in this struct. */
-struct usb_wn {
-    struct usb_device * udev;
-};
-
-/* Define the table listing the vendor and device IDs of devices
-   that this module was written for. */
+/* List containing the vendor and product IDs of devices
+   supported by this module. */
 static struct usb_device_id wn_table[] = {
     {
         USB_DEVICE(WN_VENDOR_ID, WN_PRODUCT_ID)
@@ -42,31 +37,53 @@ static struct usb_device_id wn_table[] = {
 };
 MODULE_DEVICE_TABLE(usb, wn_table);
 
-/* Forward declare the wn_driver instance. */
+/* Forward declare the wn_driver instance so that we can
+   access it from wn_open. */
 static struct usb_driver wn_driver;
 
-/* Set the device to the specified color. */
+/* Utility method to set the device to the specified color.
+   Values for red, green, and blue are in the range 0-255
+   although the device range is 0-64. Values are interpolated. */
 static int wn_set_color(struct usb_device * udev,
                         u8 red, u8 green, u8 blue)
 {
-    /* Create the data buffer to be sent to the device. */
-    u8 buf[8] = {
-        red, green, blue, 0, 0, 0, 0x1F, 0x05
-    };
+    u8 * buf = NULL;
+    int retval = -ENOMEM;
     
-    /* Send the data to the device. */
-    return usb_control_msg(udev,
-                           usb_sndctrlpipe(udev, 0),
-                           0x09,
-                           0x21,
-                           0x0200,
-                           0,
-                           buf,
-                           8,
-                           0);
+    /* Allocate 8 bytes for transmission to the device. */
+    buf = kzalloc(8, GFP_KERNEL);
+    if(!buf)
+    {
+        WN_ERR("unable to allocate memory for control message");
+        goto error;
+    }
+    
+    /* Prepare the contents of the buffer. */
+    buf[0] = red / 4;
+    buf[1] = green / 4;
+    buf[2] = blue / 4;
+    buf[6] = 0x1f;
+    buf[7] = 0x05;
+    
+    /* Send the data to the device and free the memory. */
+    retval = usb_control_msg(udev,
+                             usb_sndctrlpipe(udev, 0),
+                             0x09,
+                             0x21,
+                             0x0200,
+                             0,
+                             buf,
+                             8,
+                             2000);
+    kfree(buf);
+    
+error:
+    
+    return retval;
 }
 
-/* Called when our device is opened. */
+/* Invoked when the device is opened. Stashes a copy of the
+   usb_device for later retrieval by wn_write. */
 static int wn_open(struct inode * inode,
                    struct file * file)
 {
@@ -76,110 +93,68 @@ static int wn_open(struct inode * inode,
     /* Ensure that the interface is valid. */
     if(!interface)
     {
-        WN_DEBUG("unable to find interface for device file");
+        WN_ERR("unable to find interface for subminor");
         return -ENODEV;
     }
     
-    /* Store a pointer to the usb_wn instance with the file. */
+    /* Store a pointer to the usb_device instance with the file. */
     file->private_data = usb_get_intfdata(interface);
-    
     return 0;
 }
 
-/* Called when our device is closed. */
-static int wn_release(struct inode * inode,
-                      struct file * file)
-{
-    return 0;
-}
-
-/* Called when data is written to the device (to change the color
-   for example). */
+/* Invoked when data is written to the device. We interpret
+   the data as a hex string prefixed with '#'. */
 static ssize_t wn_write(struct file * file,
                         const char __user * user_buf,
                         size_t count,
                         loff_t * ppos)
 {
-    struct usb_wn * dev = file->private_data;
-
-    /* Verify that the device is still valid. */
-    if(!dev->udev)
-    {
-        WN_DEBUG("usb_device is NULL");
-        return -ENODEV;
-    }
+    struct usb_device * udev = file->private_data;
     
-    return wn_set_color(dev->udev, 0x40, 0, 0);
+    /* The return code of this method is the return
+       value of wn_set_color to ensure errors cascade. */
+    return wn_set_color(udev, 0, 0, 0xff);
 }
 
-/* Table containing the list of file operation functions. */
+/* List containing the file operation functions implemented. */
 static struct file_operations wn_fops = {
-    .owner =    THIS_MODULE,
-    .open =     wn_open,
-    .release =  wn_release,
-    .write =    wn_write
+    .owner = THIS_MODULE,
+    .open  = wn_open,
+    .write = wn_write
 };
 
-/* ... */
+/* List containing a pointer to the file_operations instance.
+   We also define the name of the device file that will be created. */
 static struct usb_class_driver wn_class = {
     .name       = "wn%d",
     .fops       = &wn_fops
 };
 
-/* Called when one of the decives is connected. */
+/* Invoked when one of the supported devices is connected. */
 static int wn_probe(struct usb_interface * interface,
                     const struct usb_device_id * id)
 {
     struct usb_device * udev = interface_to_usbdev(interface);
-    struct usb_wn * dev = NULL;
-    int retval = -ENODEV;
     
     /* Ensure that the interface exists. */
     if(!udev)
     {
-        WN_DEBUG("interface_to_usbdev returned NULL");
-        goto error;
+        WN_ERR("interface_to_usbdev returned NULL");
+        return -ENODEV;
     }
     
-    /* Allocate storage space for the usb_wn struct and store
-       it with the interface. */
-    dev = kzalloc(sizeof(struct usb_wn), GFP_KERNEL);
-    if(!dev)
-    {
-        WN_DEBUG("unable to allocate memory for usb_wn struct");
-        retval = -ENOMEM;
-        goto error;
-    }
-    
-    /* Associate the usb_wn with the interface. */
-    dev->udev = udev;
-    usb_set_intfdata(interface, dev);
+    /* Associate the usb_device with the interface. */
+    usb_set_intfdata(interface, udev);
     
     /* Now attempt to actually create the device. */
-    retval = usb_register_dev(interface, &wn_class);
-    
-    WN_DEBUG("device connected and initialized");
-    return retval;
-
-error:
-    
-    /* Free the memory used by the structure if an error occurred. */
-    kfree(dev);
-    return retval;
+    return usb_register_dev(interface, &wn_class);
 }
 
-/* Called when one of the devices is disconnected. */
+/* Invoked when one of the devices is disconnected. */
 static void wn_disconnect(struct usb_interface * interface)
 {
-    /* Retrieve the data for the device and free it. */
-    struct usb_wn * dev = usb_get_intfdata(interface);
-    usb_set_intfdata(interface, NULL);
-    kfree(dev);
-    
     /* Deregister the device we created. */
     usb_deregister_dev(interface, &wn_class);
-    
-    WN_DEBUG("device has been disconnected");
 }
 
 /* Driver information table. */
@@ -190,26 +165,24 @@ static struct usb_driver wn_driver = {
     .id_table =   wn_table
 };
 
-/* Called when our module is loaded into the kernel. */
+/* Invoked when our module is loaded into the kernel. */
 static int __init usb_wn_init(void)
 {
     /* Attempt to register the USB driver. */
     int retval = usb_register(&wn_driver);
     
     /* Either way, log the status. */
-    if(retval) WN_DEBUG("failed to register the webmail_notifier driver");
-    else       WN_DEBUG("webmail_nofitifier driver registered");
+    if(retval)
+        WN_ERR("failed to register the webmail_notifier driver");
     
     return retval;
 }
 
-/* Called when our device is unloaded from the kernel. */
+/* Invoked when our device is unloaded from the kernel. */
 static void __exit usb_wn_exit(void)
 {
     /* Remove the USB driver. */
     usb_deregister(&wn_driver);
-    
-    WN_DEBUG("webmail_nofitifier driver registered");
 }
 
 module_init(usb_wn_init);
