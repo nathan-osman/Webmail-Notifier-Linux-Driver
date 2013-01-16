@@ -41,6 +41,20 @@ MODULE_DEVICE_TABLE(usb, wn_table);
    access it from wn_open. */
 static struct usb_driver wn_driver;
 
+/* Utility method to convert an ASCII character to its associated
+   hex value. */
+static u8 wn_ascii_to_hex(char ch)
+{
+    if(ch >= '0' && ch <= '9')
+        return ch - '0';
+    else if(ch >= 'A' && ch <= 'F')
+        return ch - 55;
+    else if(ch >= 'a' && ch <= 'f')
+        return ch - 87;
+    else
+        return 0;
+}
+
 /* Utility method to set the device to the specified color.
    Values for red, green, and blue are in the range 0-255
    although the device range is 0-64. Values are interpolated. */
@@ -110,10 +124,19 @@ static ssize_t wn_write(struct file * file,
                         loff_t * ppos)
 {
     struct usb_device * udev = file->private_data;
+    u8 red = 0, green = 0, blue = 0;
+    
+    /* Only attempt to parse the color if 7 or more characters were provided. */
+    if(count >= 7 && user_buf[0] == '#')
+    {
+        red   = wn_ascii_to_hex(user_buf[1]) << 4 | wn_ascii_to_hex(user_buf[2]);
+        green = wn_ascii_to_hex(user_buf[3]) << 4 | wn_ascii_to_hex(user_buf[4]);
+        blue  = wn_ascii_to_hex(user_buf[5]) << 4 | wn_ascii_to_hex(user_buf[6]);
+    }
     
     /* The return code of this method is the return
        value of wn_set_color to ensure errors cascade. */
-    return wn_set_color(udev, 0, 0, 0xff);
+    return wn_set_color(udev, red, green, blue);
 }
 
 /* List containing the file operation functions implemented. */
