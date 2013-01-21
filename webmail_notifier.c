@@ -125,6 +125,7 @@ static ssize_t wn_write(struct file * file,
 {
     struct usb_device * udev = file->private_data;
     u8 red = 0, green = 0, blue = 0;
+    int retval;
     
     /* Only attempt to parse the color if 7 or more characters were provided. */
     if(count >= 7 && user_buf[0] == '#')
@@ -134,9 +135,12 @@ static ssize_t wn_write(struct file * file,
         blue  = wn_ascii_to_hex(user_buf[5]) << 4 | wn_ascii_to_hex(user_buf[6]);
     }
     
+    retval = wn_set_color(udev, red, green, blue);
+    
     /* The return code of this method is the return
-       value of wn_set_color to ensure errors cascade. */
-    return wn_set_color(udev, red, green, blue);
+       value of wn_set_color only if there was an error. */
+    if(retval < 0) return retval;
+    else           return count;
 }
 
 /* List containing the file operation functions implemented. */
