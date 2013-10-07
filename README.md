@@ -6,7 +6,7 @@ This project intends to create a working Linux device driver for the [Dream Chee
 
 The device itself consists of a small plastic shell in the shape of an envelope. According to the website, its physical dimensions are approximately 4.7cm x 7.5cm x 3 cm. The picture below demonstrates its appearance when lit:
 
-![](http://www.dreamcheeky.com/sites/default/files/imagecache/product_big/sites/default/files/webmailnotifier3.jpg)
+![](http://i.stack.imgur.com/EaltB.png)
 
 On a more technical note, the USB vendor and product ID are as follows:
 
